@@ -129,3 +129,10 @@ class TestGBMSimulator:
         if '.' in price_str:
             decimal_part = price_str.split('.')[1]
             assert len(decimal_part) <= 2
+
+
+def test_add_ticker_internal_duplicate_is_noop():
+    """_add_ticker_internal ignores tickers that are already tracked."""
+    sim = GBMSimulator(tickers=["AAPL"])
+    sim._add_ticker_internal("AAPL")
+    assert sim.get_tickers() == ["AAPL"]

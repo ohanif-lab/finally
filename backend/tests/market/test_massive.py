@@ -1,8 +1,10 @@
 """Tests for MassiveDataSource (mocked)."""
 
+import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
+from massive.rest.models import SnapshotMarketType
 
 from app.market.cache import PriceCache
 from app.market.massive_client import MassiveDataSource
@@ -199,3 +201,38 @@ class TestMassiveDataSource:
         assert cache.get_price("AAPL") == 190.50
 
         await source.stop()
+
+
+@pytest.mark.asyncio
+class TestMassiveEdgeCases:
+    """Cover the poll loop and the synchronous fetch wrapper."""
+
+    async def test_poll_loop_polls_repeatedly(self):
+        """The background loop keeps polling on each interval."""
+        cache = PriceCache()
+        source = MassiveDataSource(api_key="test-key", price_cache=cache, poll_interval=0.01)
+        source._tickers = ["AAPL"]
+        source._client = MagicMock()
+
+        snaps = [_make_snapshot("AAPL", 190.50, 1707580800000)]
+        with patch.object(source, "_fetch_snapshots", return_value=snaps) as fetch:
+            source._task = asyncio.create_task(source._poll_loop())
+            await asyncio.sleep(0.1)
+            await source.stop()
+
+        assert fetch.call_count >= 2
+        assert cache.get_price("AAPL") == 190.50
+
+    async def test_fetch_snapshots_calls_client(self):
+        """_fetch_snapshots passes the tracked tickers to the REST client."""
+        source = MassiveDataSource(api_key="test-key", price_cache=PriceCache())
+        source._tickers = ["AAPL", "MSFT"]
+        source._client = MagicMock()
+        source._client.get_snapshot_all.return_value = ["snap"]
+
+        result = source._fetch_snapshots()
+
+        assert result == ["snap"]
+        kwargs = source._client.get_snapshot_all.call_args.kwargs
+        assert kwargs["tickers"] == ["AAPL", "MSFT"]
+        assert kwargs["market_type"] == SnapshotMarketType.STOCKS

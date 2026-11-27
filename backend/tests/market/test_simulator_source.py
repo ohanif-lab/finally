@@ -136,3 +136,21 @@ class TestSimulatorDataSource:
         # Just verify it starts and stops cleanly
         await asyncio.sleep(0.2)
         await source.stop()
+
+
+@pytest.mark.asyncio
+class TestSimulatorLoopResilience:
+    async def test_loop_survives_step_exception(self):
+        """A failing step is logged and the loop keeps running."""
+        from unittest.mock import patch
+
+        cache = PriceCache()
+        source = SimulatorDataSource(price_cache=cache, update_interval=0.01)
+        await source.start(["AAPL"])
+
+        with patch.object(source._sim, "step", side_effect=RuntimeError("boom")) as step:
+            await asyncio.sleep(0.1)
+            assert step.call_count >= 2
+            assert source._task is not None and not source._task.done()
+
+        await source.stop()
